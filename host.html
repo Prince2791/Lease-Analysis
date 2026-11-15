@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Host · Aircraft Lease Market</title><link rel="stylesheet" href="assets/app.css">
+<style>
+.wrap{max-width:1240px}.top .row{max-width:1240px}
+.cols{display:grid;grid-template-columns:1fr;gap:14px}@media(min-width:900px){.cols{grid-template-columns:1fr 1fr}}
+.qr{text-align:center}.qr svg{width:240px;height:240px}
+.stat{font-size:30px;font-weight:750;font-variant-numeric:tabular-nums}.stats{display:flex;gap:28px;flex-wrap:wrap}
+.feed{max-height:270px;overflow:auto;font-size:13px}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ctl input{width:64px;padding:8px}
+.grp{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:#fff}
+.prompt{border-left:4px solid var(--amber);padding:6px 12px;margin:10px 0;background:#fff}
+.newsbtn.done{background:#e3f1e9;color:var(--green);border-color:var(--green)}
+details summary{cursor:pointer;font-weight:600}
+</style></head><body>
+<div id="setup" class="wrap setup hidden"><div class="card">
+  <h2>Connect the game to your Google Sheet</h2>
+  <p class="small muted">Paste the web app URL from Apps Script (Deploy → Manage deployments; it ends in <span class="code">/exec</span>) and the host PIN from the Config tab of your Sheet (default 1234).</p>
+  <label for="apiin">Web app URL</label><input id="apiin" placeholder="https://script.google.com/macros/s/…/exec">
+  <label for="pinin">Host PIN</label><input id="pinin" type="password" value="">
+  <div class="btns"><button id="connect">Connect</button></div><div class="err" id="seterr"></div>
+</div></div>
+
+<div id="main" class="hidden">
+<div class="top"><div class="row"><h1>Aircraft Lease Market · host</h1><span class="badge phase" id="phase"></span>
+  <span class="sub" id="counts"></span><span class="timer" id="timer"></span></div></div>
+<div class="wrap">
+  <div class="card"><div class="ctl">
+    <button class="ghost" onclick="setPhase('lobby')">Lobby</button>
+    <div class="grp"><button onclick="setPhase('negotiate',$('#m1').value)">Open market</button><input id="m1" value="25"> min</div>
+    <div class="grp"><button onclick="setPhase('books',$('#m2').value)">Open books</button><input id="m2" value="15"> min</div>
+    <div class="grp"><button onclick="setPhase('analyst',$('#m3').value)">Analyst stage</button><input id="m3" value="10"> min</div>
+    <button onclick="setPhase('results')">Show results</button>
+  </div>
+  <div class="ctl" style="margin-top:10px"><span class="muted small">Release news (applies to leases signed afterwards):</span>
+    <button class="ghost newsbtn" data-news="e1">1 · RBI rate hike</button><button class="ghost newsbtn" data-news="e2">2 · Lenders tighten</button><button class="ghost newsbtn" data-news="e3">3 · Rival withdraws long quotes</button></div>
+  <div class="ctl" style="margin-top:10px"><a id="sheetlink" target="_blank" rel="noopener">Open the response Sheet</a> · <a href="#" id="csv">Download results CSV</a> · <a href="#" id="disconnect">Change Sheet</a>
+    <button class="bad" style="margin-left:auto" onclick="resetGame()">Reset game</button></div>
+  <div class="muted small" id="msg" style="margin-top:6px"></div></div>
+
+  <div id="lobby" class="cols">
+    <div class="card qr"><span class="badge lessor">Lessors</span><h2>I own an aircraft</h2><div id="qrl"></div><div id="jl" class="muted small"></div></div>
+    <div class="card qr"><span class="badge lessee">Airlines</span><h2>I need an aircraft</h2><div id="qre"></div><div id="je" class="muted small"></div></div>
+  </div>
+  <div class="card"><div class="stats" id="stats"></div><div id="newsnow"></div></div>
+  <div class="cols">
+    <div class="card"><h2>Deals: rent against term</h2><div id="chart"></div>
+      <div class="muted small">Filled = finance lease in the lessor's books; hollow = operating. Larger ring = bigger RVG or option. Square = purchase option. Dashed line: rent giving a lessor 8% with no extras.</div></div>
+    <div class="card"><h2>Market activity</h2><div class="feed" id="feed"></div></div>
+  </div>
+  <div class="card"><h2>Signed leases</h2><div class="scroll" id="deals"></div></div>
+  <div class="card" id="bookscard"><h2>Books and analyst: accuracy</h2><div id="acc"></div></div>
+  <div class="card" id="debrief"><h2>Debrief</h2><div id="analysis"></div>
+    <div class="prompt"><b>1. Same aircraft, different classification.</b> Which leases are finance leases for the lessor, and which indicator tipped each one: term, PV test, or a bargain purchase option?</div>
+    <div class="prompt"><b>2. One contract, two numbers.</b> For RVG deals the lessor counts the whole guarantee (para 70(c)); the airline counts only what it expects to pay (para 27(c)). For option deals each side judges "reasonably certain" on its own residual estimate. Find a deal where they disagreed.</div>
+    <div class="prompt"><b>3. Incentives.</b> Did anyone take a cash incentive instead of a lower rent? It lowers the airline's ROU asset but not its liability, and the lessor spreads it over the term. Who prefers which, and why?</div>
+    <div class="prompt"><b>4. News.</b> After the RBI hike, airlines' IBRs rose, so the same rent gave a <i>smaller</i> lease liability and more covenant headroom. Is a higher-rate world really "less leveraged"?</div>
+    <div class="prompt"><b>5. Structuring.</b> Did lessors whose boards wanted finance leases use guarantees or bargain options to get there? Did capped airlines shorten terms or push rent into an option price? What should an analyst adjust?</div>
+    <div class="prompt"><b>6. Analyst desk.</b> Ind AS 116 raised every airline's EBITDA and debt-to-equity on day 1 while year-1 profit fell. How did the 8× rent shortcut compare with the discounted liability for long versus short leases?</div>
+  </div>
+  <div class="cols"><div class="card"><h2>Lessors</h2><div id="bl"></div></div><div class="card"><h2>Airlines</h2><div id="be"></div></div></div>
+  <div class="card"><details><summary>Players, cards and rejoin codes (instructor only)</summary><div class="scroll" id="players"></div></details></div>
+</div></div>
+
+<script src="assets/engine.js"></script><script src="assets/story.js"></script><script src="assets/qrcode.js"></script>
+<script>
+const $ = s => document.querySelector(s), esc = STORY.esc;
+const f1 = x => Number(x).toFixed(1), f2 = x => Number(x).toFixed(2);
+const qs = new URLSearchParams(location.search);
+if (qs.get('api')) localStorage.setItem('lm2_host_api', qs.get('api'));
+let API = localStorage.getItem('lm2_host_api'), PIN = localStorage.getItem('lm2_host_pin');
+let S = null, skew = 0, last = {}, timer = null;
+const QL = {e_opt: 'Airline: option reasonably certain?', e_rvg: 'Airline: RVG in lease payments', e_liab: 'Airline: lease liability', e_rou: 'Airline: ROU asset', e_int: 'Airline: interest yr 1',
+  e_dep: 'Airline: depreciation yr 1', e_chg: 'Airline: total charge yr 1', e_close: 'Airline: closing liability', r_opt: 'Lessor: option reasonably certain?', r_rate: 'Lessor: implicit rate',
+  r_pv: 'Lessor: PV % of fair value', r_class: 'Lessor: classification', r_ni: 'Lessor (finance): net investment', r_inc: 'Lessor (finance): finance income', r_close: 'Lessor (finance): closing NI',
+  r_li: 'Lessor (operating): lease income', r_dep: 'Lessor (operating): depreciation', r_prof: 'Lessor (operating): profit',
+  a_ebitda: 'Analyst: EBITDA uplift', a_pbt: 'Analyst: PBT difference', a_de: 'Analyst: debt/equity', a_8x: 'Analyst: 8× rule gap'};
+
+async function get(p) { const r = await fetch(API + '?' + new URLSearchParams(p), {cache: 'no-store'}); return r.json(); }
+async function post(b) { try { const r = await fetch(API, {method: 'POST', body: JSON.stringify(Object.assign({pin: PIN}, b))}); return await r.json(); } catch (e) { return {error: 'Network problem'}; } }
+function msg(m) { $('#msg').textContent = m || ''; }
+
+$('#connect').onclick = async () => {
+  API = $('#apiin').value.trim(); PIN = $('#pinin').value.trim(); $('#seterr').textContent = 'Connecting…';
+  try { const j = await get({a: 'host', pin: PIN}); if (j.error) throw new Error(j.error); }
+  catch (e) { $('#seterr').textContent = 'Could not connect: ' + e.message + '. Check the URL ends in /exec and access is "Anyone".'; return; }
+  localStorage.setItem('lm2_host_api', API); localStorage.setItem('lm2_host_pin', PIN); start();
+};
+$('#disconnect').onclick = e => { e.preventDefault(); localStorage.removeItem('lm2_host_api'); localStorage.removeItem('lm2_host_pin'); location.href = location.pathname; };
+
+function joinUrl(role) { return new URL('index.html', location.href).href.split('?')[0] + '?api=' + encodeURIComponent(API) + '&role=' + role; }
+function qrSvg(text) { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({cellSize: 4, margin: 2}); }
+
+async function setPhase(p, min) { msg('Working…'); const j = await post({a: 'phase', phase: p, minutes: +min || 0}); msg(j.error || ''); poll(); }
+document.querySelectorAll('[data-news]').forEach(b => b.onclick = async () => {
+  if (b.classList.contains('done')) return;
+  if (!confirm('Release this news to every phone now? It cannot be undone.')) return;
+  const j = await post({a: 'news', key: b.dataset.news}); msg(j.error || ''); poll();
+});
+async function resetGame() {
+  if (prompt('This clears every player, offer, deal and answer from the Sheet. Type RESET to confirm.') !== 'RESET') return;
+  msg('Resetting…'); const j = await post({a: 'reset', confirm: 'RESET'}); msg(j.error || 'Reset done.'); poll();
+}
+async function removePlayer(id) { if (!confirm('Remove this player?')) return; const j = await post({a: 'remove', id}); msg(j.error || ''); poll(); }
+function put(id, html) { if (last[id] !== html) { last[id] = html; $(id).innerHTML = html; } }
+const tt = d => `${d.term}y · ${d.rent}` + (d.rvg ? ` · RVG ${d.rvg}` : '') + (d.inc ? ` · inc ${d.inc}` : '') + (d.opt ? ` · opt ${d.opt}` : '');
+
+function chart(D) {
+  const W = 540, H = 300, L = 44, B = 34, T = 12, R = 12;
+  const xs = t => L + (t - 5) / 14 * (W - L - R), ys = r => H - B - (r - 30) / 40 * (H - B - T);
+  let g = '';
+  for (let r = 30; r <= 70; r += 10) g += `<line x1="${L}" x2="${W - R}" y1="${ys(r)}" y2="${ys(r)}" stroke="#e3e6ea"/><text x="${L - 6}" y="${ys(r) + 4}" text-anchor="end" font-size="11" fill="#5b6776">${r}</text>`;
+  LM.TERMS.forEach(t => g += `<text x="${xs(t)}" y="${H - B + 16}" text-anchor="middle" font-size="11" fill="#5b6776">${t}</text>`);
+  g += `<text x="${(W + L) / 2}" y="${H - 4}" text-anchor="middle" font-size="11" fill="#5b6776">term (years)</text>`;
+  g += `<polyline points="${LM.TERMS.map(t => xs(t) + ',' + ys((400 - LM.RES_L[t] * LM.dsc(t, .08)) / LM.ann(t, .08))).join(' ')}" fill="none" stroke="#e8a33a" stroke-dasharray="5 4" stroke-width="2"/>`;
+  const seen = {};
+  D.forEach(d => {
+    const k = d.term + ':' + d.rent; seen[k] = (seen[k] || 0) + 1; const x = xs(d.term) + (seen[k] - 1) * 7, y = ys(d.rent);
+    const fin = d.classification === 'finance', r = 6 + Math.max(d.rvg, d.opt / 2) / 20, col = fin ? '#2c5d8f' : '#1f7a4d';
+    const tip = `<title>${esc(d.lessor)} – ${esc(d.lessee)}: ${tt(d)}</title>`;
+    g += d.opt ? `<rect x="${x - r}" y="${y - r}" width="${2 * r}" height="${2 * r}" fill="${fin ? col : '#fff'}" fill-opacity=".8" stroke="${col}" stroke-width="2">${tip}</rect>`
+               : `<circle cx="${x}" cy="${y}" r="${r}" fill="${fin ? col : '#fff'}" fill-opacity=".8" stroke="${col}" stroke-width="2">${tip}</circle>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}</svg>`;
+}
+
+function render() {
+  const P = S.players, nl = P.filter(p => p.role === 'lessor'), ne = P.filter(p => p.role === 'lessee'), D = S.deals;
+  $('#phase').textContent = S.phase; $('#counts').textContent = `${nl.length} lessors · ${ne.length} airlines`;
+  $('#sheetlink').href = S.sheetUrl;
+  $('#lobby').classList.toggle('hidden', S.phase !== 'lobby');
+  put('#jl', nl.map(p => esc(p.firm) + ' (' + esc(p.team) + ')').join('<br>')); put('#je', ne.map(p => esc(p.firm) + ' (' + esc(p.team) + ')').join('<br>'));
+  document.querySelectorAll('[data-news]').forEach(b => b.classList.toggle('done', !!S.news[b.dataset.news]));
+  const fin = D.filter(d => d.classification === 'finance').length;
+  put('#stats', [['Signed leases', D.length], ['Unsigned lessors', nl.filter(p => !p.signed).length], ['Unsigned airlines', ne.filter(p => !p.signed).length],
+    ['Open offers', S.openOffers], ['Offers made', S.totalOffers], ['Finance / operating', `${fin} / ${D.length - fin}`]]
+    .map(([k, v]) => `<div><div class="muted small">${k}</div><div class="stat">${v}</div></div>`).join(''));
+  put('#newsnow', Object.keys(S.news).filter(k => S.news[k]).map(k => `<div class="news"><b>NEWS released: ${esc(STORY.NEWS[k].head)}</b><span class="small">${esc(STORY.NEWS[k].body)}</span></div>`).join(''));
+  put('#chart', chart(D));
+  put('#feed', S.log.map(e => `<div>${new Date(e.ts).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · ${esc(e.text)}</div>`).join(''));
+  const rv = S.phase === 'results';
+  put('#deals', D.length ? `<table><tr><th>Lessor</th><th>Airline</th><th>Terms</th><th>News at signing</th><th class="n">Implicit rate</th><th class="n">PV % FV</th><th>Lessor books</th>
+    <th class="n">Lessor PV of payments</th><th class="n">Airline IBR</th><th class="n">Airline liability</th><th class="n">ROU</th>${rv ? '<th class="n">Lessor score</th><th class="n">Airline score</th>' : ''}<th>Flags</th></tr>` +
+    D.map(d => `<tr><td>${esc(d.lessor)}</td><td>${esc(d.lessee)}</td><td>${tt(d)}</td><td>${d.news.join(', ') || '–'}</td><td class="n">${f2(d.rate)}%</td><td class="n">${f1(d.pvPct)}%</td>
+      <td><span class="badge ${d.classification}">${d.classification}</span><div class="muted small">${esc(d.why)}</div></td><td class="n">${f2(d.lessorPv)}</td><td class="n">${f2(d.ibr)}%</td><td class="n">${f2(d.liability)}</td><td class="n">${f2(d.rou)}</td>
+      ${rv ? `<td class="n">${f1(d.lessorScore)}</td><td class="n">${f1(d.lesseeScore)}</td>` : ''}
+      <td>${d.pref ? `<span class="pill ${d.prefMet ? 'good' : ''}">board: ${d.pref}</span>` : ''}${d.capBreach ? '<span class="pill warn">over cap</span>' : ''}${d.shortTerm ? '<span class="pill warn">below plan</span>' : ''}${d.opt && d.lessorExercise !== d.lesseeExercise ? '<span class="pill warn">option judged differently</span>' : ''}</td></tr>`).join('') + '</table>'
+    : '<span class="muted">No leases signed yet.</span>');
+  const keys = Object.keys(QL).filter(k => S.qstats[k]);
+  put('#acc', keys.length ? '<table><tr><th>Question</th><th class="n">Finished</th><th class="n">Right first try</th><th class="n">Right in the end</th></tr>' +
+    keys.map(k => { const q = S.qstats[k]; return `<tr><td>${QL[k]}</td><td class="n">${q.n}</td><td class="n">${q.n ? Math.round(100 * q.first / q.n) : 0}%</td><td class="n">${q.n ? Math.round(100 * q.right / q.n) : 0}%</td></tr>`; }).join('') + '</table>'
+    : '<span class="muted">No finished answers yet.</span>');
+  $('#bookscard').classList.toggle('hidden', !['books', 'analyst', 'results'].includes(S.phase));
+  $('#debrief').classList.toggle('hidden', !rv);
+  const rvg = D.filter(d => d.rvg > 0), opt = D.filter(d => d.opt > 0), inc = D.filter(d => d.inc > 0);
+  put('#analysis', D.length ? `<div class="stats" style="margin-bottom:8px">
+    <div><div class="muted small">Finance leases</div><div class="stat">${fin} of ${D.length}</div></div>
+    <div><div class="muted small">With RVG / option / incentive</div><div class="stat">${rvg.length} / ${opt.length} / ${inc.length}</div></div>
+    <div><div class="muted small">Option judged differently</div><div class="stat">${opt.filter(d => d.lessorExercise !== d.lesseeExercise).length}</div></div>
+    <div><div class="muted small">Avg lessor PV − airline liability</div><div class="stat">${f1(D.reduce((a, d) => a + d.lessorPv - d.liability, 0) / D.length)}</div></div>
+    <div><div class="muted small">Over lenders' cap</div><div class="stat">${D.filter(d => d.capBreach).length}</div></div></div>` : '');
+  const board = rows => '<div class="scroll"><table><tr><th>#</th><th>Firm</th><th class="n">Deal</th><th class="n">Books</th><th class="n">Analyst</th><th class="n">Total</th></tr>' +
+    rows.map(x => `<tr><td>${x.rank}</td><td>${esc(x.firm)}<div class="muted small">${esc(x.team)}</div></td><td class="n">${x.noDeal ? 'no deal ' : ''}${f1(x.deal)}</td><td class="n">${x.books}</td><td class="n">${x.analyst}</td><td class="n"><b>${f1(x.total)}</b></td></tr>`).join('') + '</table></div>';
+  put('#bl', rv ? board(S.board.lessor) : '<span class="muted">Shown at results.</span>'); put('#be', rv ? board(S.board.lessee) : '<span class="muted">Shown at results.</span>');
+  put('#players', '<table><tr><th>Role</th><th>Firm</th><th>Team</th><th>Card</th><th>Rejoin code</th><th>Status</th><th></th></tr>' +
+    P.map(p => `<tr><td>${p.role}</td><td>${esc(p.firm)}</td><td>${esc(p.team)}</td><td>${p.card}</td><td class="code">${p.code}</td><td>${p.signed ? 'signed' : 'open'}</td><td>${p.signed ? '' : `<button class="ghost" style="padding:4px 8px;font-size:12px" onclick="removePlayer(${p.id})">remove</button>`}</td></tr>`).join('') + '</table>');
+}
+$('#csv').onclick = e => {
+  e.preventDefault(); if (!S) return;
+  const rows = [['role', 'rank', 'firm', 'team', 'deal', 'books', 'analyst', 'total']];
+  ['lessor', 'lessee'].forEach(r => S.board[r].forEach(x => rows.push([r, x.rank, x.firm, x.team, x.deal, x.books, x.analyst, x.total])));
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = 'lease_market_results.csv'; a.click();
+};
+function tick() {
+  if (!S) return; const t = $('#timer');
+  if (!S.deadline || !['negotiate', 'books', 'analyst'].includes(S.phase)) { t.textContent = ''; return; }
+  const left = Math.max(0, Math.round((S.deadline - (Date.now() + skew)) / 1000));
+  t.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; t.classList.toggle('low', left < 120);
+}
+let busy = false;
+async function poll() {
+  if (busy) return; busy = true;
+  try { const j = await get({a: 'host', pin: PIN}); if (j.error) { msg(j.error); return; } S = j; skew = S.now - Date.now(); render(); tick(); }
+  catch (e) { msg('Connection problem; retrying…'); } finally { busy = false; }
+}
+function start() {
+  $('#setup').classList.add('hidden'); $('#main').classList.remove('hidden');
+  $('#qrl').innerHTML = qrSvg(joinUrl('lessor'));
+  $('#qre').innerHTML = qrSvg(joinUrl('lessee'));
+  poll(); setInterval(poll, 5000); setInterval(tick, 1000);
+}
+if (API && PIN) start(); else { $('#setup').classList.remove('hidden'); if (API) $('#apiin').value = API; }
+</script></body></html>
