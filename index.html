@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aircraft Lease Market</title><link rel="stylesheet" href="assets/app.css"></head>
+<body>
+<div id="start" class="wrap hidden">
+  <div class="hero"><h1>Aircraft Lease Market</h1><p class="muted">FSA · Ind AS 116 · one aircraft, one deal, two sets of books</p></div>
+  <div id="noapi" class="card hidden"><h2>Use your instructor's link</h2><p class="muted small">Scan the QR code on the classroom screen. This page needs the game link to connect.</p></div>
+  <div id="joinbox" class="hidden">
+    <div id="rolepick">
+      <a class="choice" href="#" data-role="lessor"><span class="badge lessor">Lessor</span><br><b>I own an aircraft</b><div class="muted">Aircraft leasing company in GIFT City</div></a>
+      <a class="choice" href="#" data-role="lessee"><span class="badge lessee">Lessee</span><br><b>I need an aircraft</b><div class="muted">Indian airline expanding its fleet</div></a>
+    </div>
+    <form id="joinform" class="card hidden"><span class="badge" id="joinrole"></span>
+      <label for="team">Your names (or team name), one phone per team</label>
+      <input id="team" maxlength="40" autocomplete="off" required placeholder="e.g. Aditi, Rahul, Sana">
+      <div class="err" id="joinerr"></div>
+      <div class="btns"><button id="joinbtn">Join</button><a href="#" id="switchrole" class="small" style="align-self:center">Wrong side?</a></div></form>
+    <form id="rejoinform" class="card"><label for="code">Already joined? Rejoin with your 5-letter code</label>
+      <div class="ans" style="display:flex;gap:8px"><input id="code" maxlength="5" class="code" style="text-transform:uppercase" autocomplete="off"><button class="ghost">Rejoin</button></div>
+      <div class="err" id="rejoinerr"></div></form>
+  </div>
+</div>
+
+<div id="game" class="hidden">
+  <div class="top"><div class="row">
+    <div><h1 id="firm">…</h1><div class="sub"><span id="teamname"></span> · code <span class="code" id="mycode"></span></div></div>
+    <span class="badge" id="rolebadge"></span><span class="badge phase" id="phase"></span><span class="timer" id="timer"></span>
+  </div></div>
+  <div class="wrap">
+    <div class="tabs" id="tabs">
+      <button data-tab="dossier">Dossier</button><button data-tab="market">Market</button><button data-tab="books">Books</button>
+      <button data-tab="analyst">Analyst</button><button data-tab="results">Results</button>
+    </div>
+    <div id="flash"></div><div id="newsbar"></div>
+    <section id="tab-dossier"><div class="card" id="dossier"></div></section>
+    <section id="tab-market" class="hidden">
+      <div id="dealbox"></div>
+      <div id="builder" class="card">
+        <h2>Make an offer</h2>
+        <label for="to">To</label><select id="to"></select>
+        <label for="term">Lease term (years)</label><select id="term"></select>
+        <div class="grid2">
+          <div><label for="rent">Annual rent</label><div class="stepper"><button type="button" class="ghost" data-step="rent:-1">−</button><input id="rent" inputmode="decimal"><button type="button" class="ghost" data-step="rent:1">+</button></div></div>
+          <div><label for="rvg">RVG by airline</label><div class="stepper"><button type="button" class="ghost" data-step="rvg:-1">−</button><input id="rvg" inputmode="decimal"><button type="button" class="ghost" data-step="rvg:1">+</button></div></div>
+          <div><label for="inc">Incentive to airline</label><div class="stepper"><button type="button" class="ghost" data-step="inc:-1">−</button><input id="inc" inputmode="decimal"><button type="button" class="ghost" data-step="inc:1">+</button></div></div>
+          <div><label for="opt">Purchase option price</label><div class="stepper"><button type="button" class="ghost" data-step="opt:-1">−</button><input id="opt" inputmode="decimal"><button type="button" class="ghost" data-step="opt:1">+</button></div></div>
+        </div>
+        <div class="muted small" style="margin-top:6px">Rs crore. RVG 0–100 or option 20–200 (0 = none), not both. Incentive 0–20, paid by the lessor on day 1.</div>
+        <div class="card" style="margin:12px 0 0;background:#fff" id="evalbox"></div>
+        <div class="btns"><button id="send">Send offer</button></div><div class="err" id="senderr"></div>
+      </div>
+      <div class="card"><h2>Offers to you</h2><div id="incoming"></div></div>
+      <div class="card"><h2>Your open offers</h2><div id="outgoing"></div></div>
+      <div class="card"><h2 id="othershead">Counterparties</h2><div id="others"></div></div>
+      <div class="card"><h2>History</h2><div id="history" class="small"></div></div>
+    </section>
+    <section id="tab-books" class="hidden"><div id="books"></div></section>
+    <section id="tab-analyst" class="hidden"><div id="analyst"></div></section>
+    <section id="tab-results" class="hidden"><div id="results"></div></section>
+  </div>
+</div>
+
+<script src="assets/engine.js"></script><script src="assets/story.js"></script>
+<script>
+const qs = new URLSearchParams(location.search);
+const SLOT = qs.get('slot') || '';            // lets you test several players in one browser: ?slot=2
+const K = n => 'lm2_' + n + SLOT;
+if (qs.get('api')) localStorage.setItem('lm2_api', qs.get('api'));
+const API = localStorage.getItem('lm2_api');
+let TOK = localStorage.getItem(K('tok'));
+let S = null, tab = null, tabChosen = false, sig = {}, joinRole = qs.get('role');
+const $ = s => document.querySelector(s);
+const esc = STORY.esc;
+const f1 = x => x == null ? '–' : Number(x).toFixed(1), f2 = x => x == null ? '–' : Number(x).toFixed(2);
+const sign = x => x >= 0 ? 'pos' : 'neg';
+
+async function get(params) {
+  const r = await fetch(API + '?' + new URLSearchParams(params), {cache: 'no-store'});
+  return r.json();
+}
+async function post(body) {
+  // text/plain body: a "simple" request, so Apps Script needs no CORS preflight
+  try { const r = await fetch(API, {method: 'POST', body: JSON.stringify(body)}); return await r.json(); }
+  catch (e) { return {error: 'Network problem, try again'}; }
+}
+function flash(m) { $('#flash').innerHTML = m ? `<div class="flash">${m}</div>` : ''; if (m) setTimeout(() => flash(''), 6000); }
+function put(id, s, html) { if (sig[id] === s) return; sig[id] = s; $(id).innerHTML = html; }
+
+/* ---------- start ---------- */
+function showStart() {
+  $('#start').classList.remove('hidden');
+  if (!API) { $('#noapi').classList.remove('hidden'); return; }
+  $('#joinbox').classList.remove('hidden');
+  if (joinRole === 'lessor' || joinRole === 'lessee') pickRole(joinRole);
+}
+function pickRole(r) {
+  joinRole = r; $('#rolepick').classList.add('hidden'); $('#joinform').classList.remove('hidden');
+  $('#joinrole').textContent = r; $('#joinrole').className = 'badge ' + r; $('#team').focus();
+}
+document.querySelectorAll('[data-role]').forEach(a => a.onclick = e => { e.preventDefault(); pickRole(a.dataset.role); });
+$('#switchrole').onclick = e => { e.preventDefault(); $('#joinform').classList.add('hidden'); $('#rolepick').classList.remove('hidden'); };
+$('#joinform').onsubmit = async e => {
+  e.preventDefault(); $('#joinbtn').disabled = true; $('#joinerr').textContent = '';
+  const j = await post({a: 'join', role: joinRole, team: $('#team').value});
+  $('#joinbtn').disabled = false;
+  if (j.error) { $('#joinerr').textContent = j.error; return; }
+  TOK = j.code; localStorage.setItem(K('tok'), TOK); startGame();
+};
+$('#rejoinform').onsubmit = async e => {
+  e.preventDefault(); const c = $('#code').value.trim().toUpperCase();
+  const j = await post({a: 'whoami', tok: c});
+  if (j.error) { $('#rejoinerr').textContent = j.error; return; }
+  TOK = j.code; localStorage.setItem(K('tok'), TOK); startGame();
+};
+
+/* ---------- tabs ---------- */
+function showTab(t) {
+  tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  ['dossier', 'market', 'books', 'analyst', 'results'].forEach(x => $('#tab-' + x).classList.toggle('hidden', x !== t));
+}
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { tabChosen = true; showTab(b.dataset.tab); });
+const PHASE_TAB = {lobby: 'dossier', negotiate: 'market', books: 'books', analyst: 'analyst', results: 'results'};
+const PHASE_NAME = {lobby: 'read your dossier', negotiate: 'market open', books: 'books', analyst: 'analyst', results: 'results'};
+
+/* ---------- offers ---------- */
+const termsTxt = t => `${t.term} yrs · rent ${t.rent}` + (t.rvg ? ` · RVG ${t.rvg}` : '') + (t.inc ? ` · incentive ${t.inc}` : '') + (t.opt ? ` · option ${t.opt}` : '');
+function readTerms() { return {term: +$('#term').value, rent: +$('#rent').value, rvg: +$('#rvg').value, inc: +$('#inc').value, opt: +$('#opt').value}; }
+function evalLocal(t) {
+  const msg = LM.validate(t); if (msg) return {error: msg};
+  if (S.me.role === 'lessor') { const s = LM.lessorScore(S.card, t); return {score: s.total, npv: s.npv, bonus: s.bonus, classification: s.classification, pvPct: s.pvPct * 100, rate: s.rate * 100, why: s.why}; }
+  const e = LM.lesseeScore(S.card, t); return {score: e.total, npv: e.npv, liability: e.liability, cap: e.cap, capPen: e.capPen, termPen: e.termPen, rival: e.rival};
+}
+function evalHTML(e, compact) {
+  if (!e) return '';
+  if (e.error) return `<span class="err">${esc(e.error)}</span>`;
+  const big = compact ? '' : 'score';
+  if (S.me.role === 'lessor') return `<div><span class="muted">Your score</span> <span class="${big} ${sign(e.score)}">${f1(e.score)}</span>
+     <div class="small">NPV ${f1(e.npv)}${e.bonus ? ' + board bonus ' + e.bonus : ''} · implicit rate ${f2(e.rate)}% · PV of payments ${f1(e.pvPct)}% of FV
+     · <span class="badge ${e.classification}">${e.classification}</span> <span class="muted">(${esc(e.why)})</span></div></div>`;
+  const flags = (e.capPen ? `<span class="pill warn">over lenders' cap ${e.capPen}</span>` : `<span class="pill good">within cap</span>`) + (e.termPen ? `<span class="pill warn">below network plan ${e.termPen}</span>` : '');
+  return `<div><span class="muted">Your score</span> <span class="${big} ${sign(e.score)}">${f1(e.score)}</span>
+     <div class="small">Value vs rival quote (${f1(e.rival)} a year) ${f1(e.npv)} · day-1 liability ${f2(e.liability)} vs cap ${e.cap} ${flags}</div></div>`;
+}
+function liveEval() { if (S) $('#evalbox').innerHTML = evalHTML(evalLocal(readTerms())); }
+function initBuilder() {
+  $('#term').innerHTML = LM.TERMS.map(t => `<option value="${t}">${t}</option>`).join('');
+  $('#term').value = 12; $('#rent').value = 48; $('#rvg').value = 0; $('#inc').value = 0; $('#opt').value = 0;
+  document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
+    const [k, d] = b.dataset.step.split(':'), lim = LM.LIM[k]; let v = parseFloat($('#' + k).value) || 0;
+    v = Math.min(lim[1], Math.max(lim[0], v + (+d) * lim[2]));
+    if (k === 'opt' && v > 0 && v < 20) v = +d > 0 ? 20 : 0;
+    $('#' + k).value = v; liveEval();
+  });
+  ['term', 'rent', 'rvg', 'inc', 'opt'].forEach(id => $('#' + id).addEventListener('input', liveEval));
+  $('#send').onclick = async () => {
+    $('#senderr').textContent = ''; const t = readTerms(), to = +$('#to').value;
+    if (!to) { $('#senderr').textContent = 'Choose who the offer is to.'; return; }
+    const m = LM.validate(t); if (m) { $('#senderr').textContent = m; return; }
+    $('#send').disabled = true; const j = await post({a: 'propose', tok: TOK, to, terms: t}); $('#send').disabled = false;
+    if (j.error) $('#senderr').textContent = j.error; else { flash('Offer sent.'); poll(); }
+  };
+}
+const OFFERS = {};
+async function respond(id, action) {
+  if (action === 'accept' && !confirm('Accepting signs a binding lease. Sign it?')) return;
+  document.body.classList.add('busy'); const j = await post({a: 'respond', tok: TOK, id, action}); document.body.classList.remove('busy');
+  if (j.error) flash(esc(j.error)); else { flash(action === 'accept' ? 'Signed!' : 'Done.'); poll(); }
+}
+function counter(id) {
+  const o = OFFERS[id]; $('#to').value = o.otherId;
+  ['term', 'rent', 'rvg', 'inc', 'opt'].forEach(k => $('#' + k).value = o[k]); liveEval(); $('#builder').scrollIntoView({behavior: 'smooth'});
+}
+
+function renderNews() {
+  put('#newsbar', JSON.stringify(S.news), S.news.map(n => `<div class="news"><b>NEWS: ${esc(STORY.NEWS[n.key].head)}</b><span class="small">${esc(STORY.NEWS[n.key].body)}</span></div>`).join(''));
+}
+function renderMarket() {
+  const open = S.phase === 'negotiate';
+  S.offers.forEach(o => OFFERS[o.id] = o);
+  if (S.deal) {
+    const d = S.deal;
+    put('#dealbox', JSON.stringify(d), `<div class="card" style="border-color:var(--green)"><h2>Signed with ${esc(d.other)} <span class="muted small">(${esc(d.otherTeam)})</span></h2>
+      <div style="font-size:18px;font-weight:700">${termsTxt(d)}</div>${evalHTML(d.eval)}
+      ${Object.keys(d.news || {}).length ? `<div class="muted small">Signed after: ${Object.keys(d.news).map(k => esc(STORY.NEWS[k].head)).join('; ')}</div>` : ''}
+      <p class="muted small">When the instructor opens the books, account for this lease from your side.</p></div>`);
+    $('#builder').classList.add('hidden');
+  } else {
+    put('#dealbox', 'none' + S.phase, open ? '' : `<div class="card"><h2>${S.phase === 'lobby' ? 'The market opens soon' : 'The market is closed'}</h2>
+      <p class="muted small">${S.phase === 'lobby' ? 'Read your dossier and plan an opening offer. You can try terms in the box below once the market opens.' : 'You did not sign. In the books you account for the class reference lease: 12 years, rent 48, nothing else.'}</p></div>`);
+    $('#builder').classList.toggle('hidden', !open);
+  }
+  const avail = S.others.filter(o => !o.signed), s = JSON.stringify(avail.map(o => o.id));
+  if (sig['#to'] !== s) {
+    const cur = $('#to').value; sig['#to'] = s;
+    $('#to').innerHTML = `<option value="">Choose ${S.me.role === 'lessor' ? 'an airline' : 'a lessor'}…</option>` + avail.map(o => `<option value="${o.id}">${esc(o.firm)} (${esc(o.team)})</option>`).join('');
+    if (avail.some(o => String(o.id) === cur)) $('#to').value = cur;
+  }
+  $('#othershead').textContent = S.me.role === 'lessor' ? 'Airlines in the market' : 'Lessors in the market';
+  put('#others', JSON.stringify(S.others), S.others.length ? '<table>' + S.others.map(o => `<tr><td>${esc(o.firm)}<div class="muted small">${esc(o.team)}</div></td><td class="n">${o.signed ? '<span class="pill">signed</span>' : '<span class="pill good">open</span>'}</td></tr>`).join('') + '</table>' : '<span class="muted">Nobody on the other side yet.</span>');
+  const inc = S.offers.filter(o => o.dir === 'in' && o.status === 'open');
+  put('#incoming', JSON.stringify(inc) + open + !!S.deal, inc.length ? inc.map(o => `<div class="offer in"><div><b>${esc(o.other)}</b> <span class="muted small">${esc(o.otherTeam)}</span></div>
+      <div class="terms">${termsTxt(o)}</div>${evalHTML(o.eval, true)}
+      <div class="btns">${open && !S.deal ? `<button class="ok" onclick="respond(${o.id},'accept')">Accept and sign</button><button class="ghost" onclick="counter(${o.id})">Counter</button><button class="bad" onclick="respond(${o.id},'reject')">Reject</button>` : ''}</div></div>`).join('') : '<span class="muted">None open.</span>');
+  const out = S.offers.filter(o => o.dir === 'out' && o.status === 'open');
+  put('#outgoing', JSON.stringify(out), out.length ? out.map(o => `<div class="offer"><div>To <b>${esc(o.other)}</b></div><div class="terms">${termsTxt(o)}</div><div class="btns"><button class="ghost" onclick="respond(${o.id},'withdraw')">Withdraw</button></div></div>`).join('') : '<span class="muted">None.</span>');
+  const hist = S.offers.filter(o => o.status !== 'open');
+  put('#history', JSON.stringify(hist), hist.length ? '<table>' + hist.map(o => `<tr><td>${o.dir === 'out' ? 'You → ' : '← '}${esc(o.other)}</td><td>${termsTxt(o)}</td><td>${o.status}</td></tr>`).join('') + '</table>' : '<span class="muted">Nothing yet.</span>');
+}
+
+/* ---------- books and analyst ---------- */
+function renderStage(stage, data, box, phaseName, intro) {
+  if (!data) { put(box, 'wait', `<div class="card"><h2>${stage === 'books' ? 'Books open after the market closes' : 'The analyst stage follows the books'}</h2></div>`); return; }
+  const shellId = box + '-q';
+  if (!document.getElementById(shellId.slice(1))) $(box).innerHTML = `<div id="${(box + '-head').slice(1)}"></div><div class="card" id="${shellId.slice(1)}"></div>`;
+  put(box + '-head', JSON.stringify([data.points, data.terms, data.facts, S.phase]), `<div class="card"><h2>${stage === 'books' ? 'Your Ind AS 116 books' : 'Analyst desk'} · ${data.points} / ${data.max} points</h2>
+    <div class="terms">${data.reference ? 'Class reference lease (you did not sign)' : 'Your lease'}: ${termsTxt(data.terms)}</div>${intro(data)}
+    <p class="muted small">5 points first try, 2.5 second try. Money to 2 decimals; rates in % (e.g. 8.40); ratios as 1.35.</p></div>`);
+  data.questions.forEach(q => {
+    const s = JSON.stringify(q) + S.phase; if (sig[stage + q.key] === s) return; sig[stage + q.key] = s;
+    let el = document.getElementById(stage + '-' + q.key);
+    if (!el) { el = document.createElement('div'); el.id = stage + '-' + q.key; $(shellId).appendChild(el); }
+    let input = '';
+    if (!q.done && !q.locked && S.phase === phaseName) input = q.kind === 'choice'
+      ? `<div class="ans" style="display:flex;gap:8px">${q.options.map(o => `<button class="ghost" onclick="answer('${stage}','${q.key}','${o}')">${o}</button>`).join('')}</div>`
+      : `<div class="ans" style="display:flex;gap:8px"><input id="in-${stage}-${q.key}" inputmode="decimal" placeholder="${q.kind === 'pct' ? 'e.g. 8.40' : q.kind === 'ratio' ? 'e.g. 1.35' : 'Rs crore'}"><button onclick="answer('${stage}','${q.key}')">Check</button></div>`;
+    el.className = 'q ' + (q.locked ? 'locked' : q.done ? (q.correct ? 'done-ok' : 'done-no') : '');
+    el.innerHTML = `<div class="lab">${esc(q.label)}</div>
+      ${q.attempts && !q.done ? `<div class="err">Not quite (you entered ${esc(q.last)}). One more try.</div>` : ''}
+      ${q.done ? `<div class="small">${q.correct ? `Correct: ${esc(q.answer)} · +${q.points}` : `Answer: <b>${esc(q.answer)}</b> (you entered ${esc(q.last)})`}</div>` : ''}
+      ${q.hint ? `<div class="muted small">${esc(q.hint)}</div>` : ''}${input}`;
+  });
+}
+async function answer(stage, key, value) {
+  if (value === undefined) value = $(`#in-${stage}-${key}`).value;
+  if (value === '' || value == null) return;
+  document.body.classList.add('busy'); const j = await post({a: 'answer', tok: TOK, stage, key, value}); document.body.classList.remove('busy');
+  if (j.error) flash(esc(j.error)); poll();
+}
+const booksIntro = () => `<p class="muted small">${S.me.role === 'lessor' ? 'Use your appraiser\'s residual estimates.' : 'Use the IBR that applied when you signed and your technical team\'s residual estimates. Legal fees: Rs 1 crore.'}</p>`;
+const analystIntro = d => `<p class="small">You are now an equity analyst covering <b>${esc(d.facts.airline)}</b>, the airline in this lease. Its 31 March 2026 snapshot: borrowings ${d.facts.debt}, equity ${d.facts.equity}, EBITDA ${d.facts.ebitda}.
+  Its lease liability on day 1 is ${f2(d.facts.liability)} and its year-1 lease charge ${f2(d.facts.charge)}. Assume the airline used to treat such leases as operating leases under Ind AS 17.</p>`;
+
+/* ---------- results ---------- */
+function renderResults() {
+  const R = S.result;
+  if (!R) { put('#results', 'wait', '<div class="card"><h2>Results appear at the end</h2></div>'); return; }
+  const v = S.reveal;
+  const board = role => '<div class="scroll"><table><tr><th>#</th><th>Firm</th><th class="n">Deal</th><th class="n">Books</th><th class="n">Analyst</th><th class="n">Total</th></tr>' +
+    R.board[role].map(x => `<tr${x.id === S.me.id ? ' style="background:#fff4dd"' : ''}><td>${x.rank}</td><td>${esc(x.firm)}<div class="muted small">${esc(x.team)}</div></td><td class="n">${x.noDeal ? 'no deal ' : ''}${f1(x.deal)}</td><td class="n">${x.books}</td><td class="n">${x.analyst}</td><td class="n"><b>${f1(x.total)}</b></td></tr>`).join('') + '</table></div>';
+  put('#results', JSON.stringify(R) + JSON.stringify(v), `<div class="card"><h2>Your result</h2><div class="score ${sign(R.me.total)}">${f1(R.me.total)}</div>
+    <div class="muted">Rank ${R.me.rank} of ${R.of} · deal ${f1(R.me.deal)}${R.me.noDeal ? ' (no deal)' : ''} + books ${R.me.books} + analyst ${R.me.analyst}</div></div>
+    ${v ? `<div class="card"><h2>One lease, two sets of books</h2><div class="terms">${termsTxt(v)}</div><div class="scroll"><table>
+      <tr><th></th><th>${esc(v.lessor)} (lessor)</th><th>${esc(v.lessee)} (lessee)</th></tr>
+      <tr><td>Discount rate</td><td>implicit rate ${f2(v.rate)}% (target ${f2(v.target)}%)</td><td>IBR ${f2(v.ibr)}%</td></tr>
+      <tr><td>Residual estimate at end</td><td>${v.lessorResidual}</td><td>${v.lesseeResidual}</td></tr>
+      ${v.opt ? `<tr><td>Purchase option reasonably certain?</td><td>${v.lessorExercise ? 'yes' : 'no'}</td><td>${v.lesseeExercise ? 'yes' : 'no'}</td></tr>` : ''}
+      ${v.rvg ? `<tr><td>RVG counted</td><td>full ${v.rvg}</td><td>expected payment ${f2(v.expectedRvg)}</td></tr>` : ''}
+      <tr><td>Classification</td><td><span class="badge ${v.classification}">${v.classification}</span> <span class="muted small">${esc(v.why)}</span></td><td>single model: ROU asset and liability</td></tr>
+      <tr><td>Day 1</td><td>${v.classification === 'finance' ? 'net investment ' + f2(400 + v.inc) + '; aircraft derecognised' : 'aircraft 400.00 stays on books'}</td><td>liability ${f2(v.liability)}; ROU ${f2(v.rou)} (depreciated over ${v.lesseePeriod} yrs)</td></tr>
+      <tr><td>Year-1 P&amp;L</td><td>profit ${f2(v.lessorProfit)}</td><td>charge ${f2(v.lesseeCharge)}</td></tr>
+      <tr><td>Deal score</td><td>${f1(v.lessorScore)}</td><td>${f1(v.lesseeScore)}</td></tr></table></div>
+      <p class="muted small">Same contract, different numbers: different rates, different residual estimates, and judgements (RVG, option) made by each side on its own information.</p></div>` : ''}
+    <div class="card"><h2>Lessors</h2>${board('lessor')}</div><div class="card"><h2>Airlines</h2>${board('lessee')}</div>`);
+}
+
+/* ---------- loop ---------- */
+let inited = false, skew = 0, newsSeen = -1, polling = false;
+async function poll() {
+  if (polling) return; polling = true;
+  let j; try { j = await get({a: 'state', tok: TOK}); } catch (e) { polling = false; return; }
+  polling = false;
+  if (j.code === 401) { localStorage.removeItem(K('tok')); location.reload(); return; }
+  if (j.error) return;
+  S = j; skew = S.now - Date.now();
+  if (!inited) {
+    inited = true; $('#firm').textContent = S.me.firm; $("#teamname").textContent = S.me.team; $('#mycode').textContent = S.me.code;
+    $('#rolebadge').textContent = S.me.role; $('#rolebadge').className = 'badge ' + S.me.role; initBuilder();
+  }
+  put('#dossier', JSON.stringify(S.card) + S.me.firm, STORY.dossier(S));
+  $('#phase').textContent = PHASE_NAME[S.phase];
+  if (!tabChosen || sig.phase !== S.phase) { if (sig.phase && sig.phase !== S.phase) tabChosen = false; showTab(PHASE_TAB[S.phase]); }
+  sig.phase = S.phase;
+  if (newsSeen >= 0 && S.news.length > newsSeen) flash('<b>News just in.</b> Read it before your next offer.');
+  newsSeen = S.news.length;
+  renderNews(); renderMarket(); liveEval();
+  renderStage('books', S.books, '#books', 'books', booksIntro);
+  renderStage('analyst', S.analyst, '#analyst', 'analyst', analystIntro);
+  renderResults(); tick();
+}
+function tick() {
+  if (!S) return; const t = $('#timer');
+  if (!S.deadline || !['negotiate', 'books', 'analyst'].includes(S.phase)) { t.textContent = ''; return; }
+  const left = Math.max(0, Math.round((S.deadline - (Date.now() + skew)) / 1000));
+  t.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; t.classList.toggle('low', left < 120);
+}
+function startGame() { $('#start').classList.add('hidden'); $('#game').classList.remove('hidden'); poll(); setInterval(poll, 4000); setInterval(tick, 1000); }
+if (API && TOK) startGame(); else showStart();
+</script>
+</body></html>
